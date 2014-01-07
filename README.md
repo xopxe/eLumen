@@ -17,6 +17,6 @@ TODO
 
 * Think what more functionality to cull, or restore.
 * Update inline docs.
-* Look into sched.idle() function, perhaps do semething smarter than busy waiting.
+* Look into sched.idle() function, perhaps do something smarter than busy waiting.
 
 
