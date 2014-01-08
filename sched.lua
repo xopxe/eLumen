@@ -1,13 +1,13 @@
---- Lumen cooperative scheduler.
--- Lumen (Lua Multitasking Environment) is a simple environment 
+--- eLumen cooperative scheduler.
+-- eLumen (Lua Multitasking Environment) is a simple environment 
 -- for coroutine based multitasking. Consists of a signal scheduler, 
--- and that's it.
+-- and that's it. It is a simplified version of the Lumen scheduler.
 -- @module sched
 -- @usage local sched = require 'sched'
 -- sched.sigrun({'a signal'}, print)
 -- local task=sched.run(function()
 --   sched.signal('a signal', 'data')
---   sched.sleep(1)
+--   sched.sleep(1000000)
 -- end)
 -- @alias M
 
@@ -18,7 +18,6 @@ local weak_keyvalue = {__mode='kv'}
 local setmetatable, coroutine, type, tostring, select, pairs, assert, next =
       setmetatable, coroutine, type, tostring, select, pairs, assert, next
 
-
 local M = {}
 
 --- Currently running task.
@@ -27,14 +26,15 @@ M.running_task = false
 
 --- Task died event.
 -- This event will be emited when a task is either killed or finishes on error.
--- The parameter is 'killed' if the task was killed, or the error message otherwise.
+-- The parameter is a array table where the first element is the taskd killed and then 
+-- 'killed' if the task was killed, or the error parameters otherwise.
 -- @usage --prints each time a task dies
 --sched.sigrun({sched.EVENT_DIE}, print)
 M.EVENT_DIE = {}
   
 --- Task finished event.
 -- This event will be emited when a task finishes normally.
--- The parameters are the output of the task's function.
+-- The parameter is a array table with the the output of the task's function.
 -- @usage --prints each time a task finishes
 --sched.sigrun({sched.EVENT_FINISH}, print)
 M.EVENT_FINISH = {}
@@ -49,8 +49,8 @@ M.STEP = {}
 local m_step = M.STEP
 
 --- Function used by the scheduler to get current time.
--- Replace with whatever your app uses. LuaSocket's gettime works just fine.
--- Defaults to os.time.
+-- Replace with whatever your platform uses. The time units returned by this call
+-- will be used for sleeping, tiemouts, etc.
 -- @function get_time
  M.get_time = function()
    return tmr.read( 0 )
@@ -70,7 +70,7 @@ local new_tasks = {} --hold tasks as created until transferred to main M.tasks (
 local waiting = {} -- setmetatable({}, weak_key)
 local next_waketime
 
-local step_task
+local step_task, wait --forward declaration
 local function emit_signal ( event, parameter ) --FIXME
   local function walk_waitd(waitd)
     for taskd, _ in pairs(waitd.tasks) do
@@ -84,7 +84,7 @@ local function emit_signal ( event, parameter ) --FIXME
           --print('the task was killed from a triggered task')
           --print (debug.traceback())
           --return --FIXME
-          M.wait()
+          wait()
         end
       else
         if waitd.buff_mode == 'keep_last' or
@@ -176,18 +176,7 @@ M.new_waitd = function(waitd_table)
   return waitd_table
 end
 
---- Wait for a signal.
--- Pauses the task until (one of) the specified signal(s) is available.
--- If there is a signal in the buffer, will return it immediately.
--- Otherwise will block the task until signal arrival, or a timeout.
--- If provided a table as parameter, will use @{new_waitd} to convert it
--- to a wait desciptor. If param is _nil_ will yield to other tasks (as
--- in cooperative multitasking)
--- Can be invoked as waitd:wait().
--- @return On event returns _event, parameters_. On timeout
--- returns _nil, 'timeout'_
--- @param waitd a Wait Descriptor for the signal (see @{waitd})
-M.wait = function ( waitd )
+wait = function ( waitd )
   assert(M.running_task)
   if waitd then 
     --in case passed a non created or joined waitd
@@ -216,13 +205,27 @@ M.wait = function ( waitd )
 	return coroutine.yield( M.running_task.co )
 end
 
+--- Wait for a signal.
+-- Pauses the task until (one of) the specified signal(s) is available.
+-- If there is a signal in the buffer, will return it immediately.
+-- Otherwise will block the task until signal arrival, or a timeout.
+-- If provided a table as parameter, will use @{new_waitd} to convert it
+-- to a wait desciptor. If param is _nil_ will yield to other tasks immediatelly (as
+-- in cooperative multitasking)
+-- Can be invoked as waitd:wait().
+-- @function wait
+-- @return On event returns _event, parameter_. On timeout
+-- returns _nil, 'timeout'_
+-- @param waitd a Wait Descriptor for the signal (see @{waitd})
+M.wait = wait
+
 --- Sleeps the task for t time units.
 -- Time computed according to @\{get_time}.
 -- @param timeout time to sleep
 M.sleep = function (timeout)
 	local sleep_waitd = M.running_task.sleep_waitd
 	sleep_waitd.timeout=timeout
-	M.wait(sleep_waitd)
+	wait(sleep_waitd)
 end
 
 --M.new_task = function ( f )
@@ -277,13 +280,13 @@ end
 -- @param waitd a Wait Descriptor for the signal (see @{waitd})
 -- @param f function to be called when the signal appears. The signal
 -- is passed to f as parameter.The signal will be provided as 
--- _event, parameters_, just as the result of a @{wait}
+-- _event, parameter_, just as the result of a @{wait}
 -- @return task in the scheduler (see @{taskd}).
 M.sigrun = function( waitd, f )
 	--local taskd = M.new_sigrun_task( waitd, f )
  	local taskd = new_task( function()
 		while true do
-			f(M.wait(waitd))
+			f(wait(waitd))
 		end
 	end)
 	return M.run(taskd)
@@ -293,11 +296,11 @@ end
 -- @param waitd a Wait Descriptor for the signal (see @{waitd})
 -- @param f function to be called when the signal appears. The signal
 -- is passed to f as parameter. The signal will be provided as 
--- _event, parameters_, just as the result of a @{wait}
+-- _event, parameter_, just as the result of a @{wait}
 -- @return task in the scheduler (see @{taskd}).
 M.sigrunonce = function( waitd, f )
 	local taskd = new_task( function()
-		f(M.wait(waitd))
+		f(wait(waitd))
 	end )
 	return M.run(taskd)
 end
@@ -318,7 +321,7 @@ M.set_pause = function(taskd, pause)
 	if pause then
 		taskd.status='paused'
 		if M.running_task==taskd then
-			M.wait()
+			wait()
 		end
 	else
 		taskd.status='ready'
@@ -329,14 +332,12 @@ end
 --- Idle function.
 -- Function called by the scheduler when there is
 -- nothing else to do (e.g., all tasks are waiting for a signal).
--- This function should idle up to t time units. Replace with
--- whatever your app uses. LuaSocket's sleep works just fine.
+-- This function should idle up to t time units. 
 -- It is allowed to idle for less than t; the empty function will
--- result in a busy wait. Defaults to execution of Linux's "sleep" command.
+-- result in a busy wait. Defaults to the empty function.
 -- @param t time to idle
 M.idle = function (t)
   --print('sleeping', tmr.read(0), t)
-  --tmr.delay(0, t)
 end
 
 local cycleready = {}
@@ -371,7 +372,7 @@ end
 -- Will give control immediatelly to tasks that are waiting on
 -- event, to regain it when they finish/block.
 -- @param event event of the signal. Can be of any type.
--- @param ... further parameters to be sent with the signal.
+-- @param parameter additional parameter to be sent with the signal.
 M.signal = function ( event, parameter )
 	--log('SCHED', 'DEBUG', 'task %s emitting event %s with %d parameters', 
 	--	tostring(M.running_task), tostring(event), select('#', ...))
@@ -479,9 +480,8 @@ end
 -- on first request basis.  
 -- Besides the following fields, provides methods for
 -- the sched functions that have a waitd as first parameter.
--- @field array The array part contains the events to wait. Can contain a '\*', 
--- to mark interest in any event. If nil, will
--- only return on timeout. 
+-- @field array The array part contains the events to wait. Can contain `sched.EVENT_ANY` 
+-- to mark interest in any event. If nil, will only return on timeout. 
 -- @field timeout optional, time to wait. nil or negative waits for ever.
 -- @field buff_mode Specifies how to behave when inserting in a full buffer.
 -- 'keep last' means replace with the new arrived signal. 'keep first'
