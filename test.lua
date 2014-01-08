@@ -23,7 +23,7 @@ sched.run(function()
   end
 end)
 
--- this task will emit a signal with a chars arrived from terminal
+-- this task will emit a signal with each char arrived from terminal
 sched.run(function()
   while true do
     local char = term.getchar(term.NOWAIT)
