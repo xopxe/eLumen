@@ -45,23 +45,24 @@ M.EVENT_FINISH = {}
 M.EVENT_ANY = {}
   
 --TODO
-M.STEP = {}
-local m_step = M.STEP
+local ev_step = {}
+M.STEP = ev_step
 
 --- Function used by the scheduler to get current time.
 -- Replace with whatever your platform uses. The time units returned by this call
 -- will be used for sleeping, tiemouts, etc.
 -- @function get_time
- M.get_time = function()
+local function get_time()
    return tmr.read( 0 )
-end --os.time
-local m_get_time = M.get_time
+end
+M.get_time = get_time 
 
 --- Tasks in scheduler.
 -- Table holding @{taskd} objects of the tasks in the scheduler. 
+-- @table tasks
 -- @usage for taskd, _ in pairs (sched.tasks) do print(taskd) end
-M.tasks = {}
-local m_tasks = M.tasks
+local m_tasks = {}
+M.tasks = m_tasks
 local new_tasks = {} --hold tasks as created until transferred to main M.tasks (ref. lua looping)
 
 --table to keep track tasks waiting for signals
@@ -194,7 +195,7 @@ wait = function ( waitd )
     
     local timeout = waitd.timeout
     if timeout and timeout>=0 then
-      local t = timeout + m_get_time()
+      local t = timeout + get_time()
       M.running_task.waketime = t
       next_waketime = next_waketime or t
       if t<next_waketime then next_waketime=t end
@@ -399,7 +400,7 @@ M.step = function ()
 				local waketime = taskd.waketime
 				if waketime then
 					next_waketime = next_waketime or waketime
-					if waketime <= m_get_time() then
+					if waketime <= get_time() then
             --emit_timeout
             taskd.waketime, taskd.waitingfor = nil, nil
             step_task(taskd, nil, 'timeout')
@@ -420,21 +421,21 @@ M.step = function ()
 
 	if #cycleready==0 then
 		if next_waketime then
-			remaining = next_waketime-m_get_time()
+			remaining = next_waketime-get_time()
 			if remaining < 0 then remaining = 0 end
 		end
   elseif #cycleready==1 then
     local available_time
     if next_waketime then
-      available_time=next_waketime-m_get_time()
+      available_time=next_waketime-get_time()
       if available_time<0 then available_time=0 end
     end
-    step_task( cycleready[1], m_step, available_time )
+    step_task( cycleready[1], ev_step, available_time )
     cycleready[1]=nil
     remaining = 0
   else
     for i=1, #cycleready do
-      step_task( cycleready[i], m_step, 0 )
+      step_task( cycleready[i], ev_step, 0 )
       cycleready[i]=nil
     end
     remaining = 0
