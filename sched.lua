@@ -53,7 +53,7 @@ M.STEP = ev_step
 -- will be used for sleeping, tiemouts, etc.
 -- @function get_time
 local function get_time()
-   return tmr.read( 0 )
+   return tmr.read( tmr.SYS_TIMER )
 end
 M.get_time = get_time 
 
